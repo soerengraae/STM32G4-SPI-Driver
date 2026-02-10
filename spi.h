@@ -3,6 +3,19 @@
 
 #include <stdint.h>
 
+#define NVIC_ISER_BASE ((uint32_t *) 0xE000E100)
+#define SPI1_NVIC_POS 35
+#define SPI1_NVIC_ISER SPI1_NVIC_POS / 32
+#define SPI1_NVIC_ISER_OFFSET SPI1_NVIC_POS - 32
+#define SPI2_NVIC_POS 36
+#define SPI2_NVIC_ISER SPI2_NVIC_POS / 32
+#define SPI2_NVIC_ISER_OFFSET SPI2_NVIC_POS - 32
+#define NVIC_IPR_BASE ((uint32_t *) 0xE000E400)
+#define SPI1_NVIC_IPR SPI1_NVIC_POS / 32
+#define SPI1_NVIC_IPR_OFFSET SPI1_NVIC_POS - 32
+#define SPI2_NVIC_IPR SPI2_NVIC_POS / 32
+#define SPI2_NVIC_IPR_OFFSET SPI2_NVIC_POS - 32
+
 #define RCC_BASE 0x40021000
 typedef struct {
 	volatile uint32_t CR; // Offset 0x00
@@ -147,8 +160,10 @@ typedef struct {
 	void *(cs_high); // Function for setting Chip Select high
     int (*transmit)(void); // Function for transmitting the TX buffer
     int (*init)(void); // Function for initialising the SPI peripheral and the respective pins
-	SPI_TypeDef *reg_addr; // Address of the SPI peripheral
+    uint8_t tx_ready;
+	SPI_TypeDef *peripheral_addr; // Stores the address of the SPI peripheral
 	uint8_t initialized; // Flag for initialisation
+	uint8_t interrupts; // Flag for enabling interrupts during initialisation
 	SPI_Baudrate_Divisor br_div; // Baud-rate divisor : default is 8
 	uint8_t ds; // Data size : default is 8
 	uint8_t mode; // SPI mode : default is 0
@@ -165,6 +180,7 @@ typedef struct {
  * PA7 as MOSI
  * */
 extern SPI spi1;
+
 /**
  * @brief spi2 uses the following pins:
  * PB12 as CS
