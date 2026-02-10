@@ -1,9 +1,6 @@
 #ifndef SPI_H_
 #define SPI_H_
 
-// SPI_DATASIZE defines the Data Size of the SPI data packets - default is 8-bit; 4- to 16-bit is possible.
-#define SPI_DATASIZE 8
-
 #include <stdint.h>
 
 #define RCC_BASE 0x40021000
@@ -51,9 +48,14 @@ typedef struct {
 } RCC_TypeDef;
 #define RCC ((RCC_TypeDef *)RCC_BASE)
 #define GPIOA_BIT 0
+#define GPIOB_BIT 1
 #define SPI1_BIT 12
+#define SPI2_BIT 14
+#define SPI3_BIT 15
+#define SPI4_BIT 15
 
 #define GPIOA_BASE 0x48000000
+#define GPIOB_BASE 0x48000400
 typedef struct {
 	volatile uint32_t MODER; // Offset 0x00
 	volatile uint32_t OTYPER; // Offset 0x04
@@ -72,11 +74,22 @@ typedef struct {
 #define PA5 10
 #define PA6 12
 #define PA7 14
+#define PA5_AF PA5*2
+#define PA6_AF PA6*2
+#define PA7_AF PA7*2
+#define GPIOB ((GPIO_TypeDef *)GPIOB_BASE)
+#define PB12 24
+#define PB13 26
+#define PB14 28
+#define PB15 30
+#define PB13_AF 20
+#define PB14_AF 24
+#define PB15_AF 28
 
 #define SPI1_BASE 0x40013000
-#define SPI2_BASE 0x40013000
-#define SPI3_BASE 0x40013000
-#define SPI4_BASE 0x40013000
+#define SPI2_BASE 0x40003800
+#define SPI3_BASE 0x40003C00
+#define SPI4_BASE 0x40013C00
 typedef struct {
 	volatile uint32_t CR1; // Offset 0x00
 	volatile uint32_t CR2; // Offset 0x04
@@ -125,22 +138,40 @@ typedef enum {
 } SPI_Error_Code;
 
 /**
- * @brief The SPI object has a default baud-rate divisor of 8 (div_8) and a default of 0 (mode = 0).
- * Firstly the object is initialized with init(), which will use @p br_div and @p mode to configure the SPI peripheral.
+ * @brief The SPI object has a default baud-rate divisor of 8 (div_8) and a default mode of 0 (mode = 0).
+ * Firstly the object is initialised with init(), which will use @p br_div and @p mode to configure the SPI peripheral.
  * Transmit data with transmit(), but first set the TX- and RX-buffers; don't forget to update @p buffer_len as well.
  * */
 typedef struct {
-	SPI_TypeDef *reg_addr;
-	uint8_t initialized;
-	SPI_Baudrate_Divisor br_div;
-	uint8_t mode;
-	uint32_t buffer_len;
-	uint8_t *tx_buffer;
-	uint8_t *rx_buffer;
-    int (*transmit)(void);
-    int (*init)(void);
+	void *(cs_low); // Function for setting Chip Select low
+	void *(cs_high); // Function for setting Chip Select high
+    int (*transmit)(void); // Function for transmitting the TX buffer
+    int (*init)(void); // Function for initialising the SPI peripheral and the respective pins
+	SPI_TypeDef *reg_addr; // Address of the SPI peripheral
+	uint8_t initialized; // Flag for initialisation
+	SPI_Baudrate_Divisor br_div; // Baud-rate divisor : default is 8
+	uint8_t ds; // Data size : default is 8
+	uint8_t mode; // SPI mode : default is 0
+	uint32_t buffer_len; // TX/RX buffer length
+	uint8_t *tx_buffer; // Pointer to the TX buffer
+	uint8_t *rx_buffer; // Pointer to the RX buffer
 } SPI;
 
+/**
+ * @brief spi1 uses the following pins:
+ * PA4 as CS
+ * PA5 as SCLK
+ * PA6 as MISO
+ * PA7 as MOSI
+ * */
 extern SPI spi1;
+/**
+ * @brief spi2 uses the following pins:
+ * PB12 as CS
+ * PB13 as SCLK
+ * PB14 as MISO
+ * PB25 as MOSI
+ * */
+extern SPI spi2;
 
 #endif /* SPI_H_ */
