@@ -6,12 +6,14 @@
 #error "SPI_DATASIZE invalid"
 #endif
 
-uint8_t transmit_byte(uint8_t byte) {
-	while (!(SPI1->SR & (1 << 1))); // Poll TXE
-	*(volatile uint8_t *)(&SPI1->DR) = byte;
+#include <stdlib.h>
 
-	while (!(SPI1->SR & (1 << 0))); // Poll RXNE
-	return *(volatile uint8_t *)(&SPI1->DR);
+static uint8_t transmit_byte(uint8_t byte, SPI_TypeDef *SPI) {
+	while (!(SPI->SR & (1 << 1))); // Poll TXE
+	*(volatile uint8_t *)(&SPI->DR) = byte;
+
+	while (!(SPI->SR & (1 << 0))); // Poll RXNE
+	return *(volatile uint8_t *)(&SPI->DR);
 }
 
 static void cs_low() {
@@ -22,7 +24,7 @@ static void cs_high() {
 	GPIOA->BSRR |= (1 << 4); // Set output for PA4
 }
 
-static int spi1_init(SPI_Baudrate_Divisor br, uint8_t mode) {
+static int spi1_init(void) {
 	RCC->AHB2ENR |= (1 << GPIOA_BIT);
 	RCC->AHB2RSTR |= (1 << GPIOA_BIT); // Set
 	RCC->AHB2RSTR &= ~(1 << GPIOA_BIT); // Clear
@@ -63,11 +65,11 @@ static int spi1_init(SPI_Baudrate_Divisor br, uint8_t mode) {
 			  | (1 << 12); // Set FIFO reception threshold to 8-bit (ensures an RXNE event after one byte is received)
 
 	/* Configure SPI1 */
-	SPI1->CR1 = (br << 3) // Baud-rate
+	SPI1->CR1 = (spi1.br_div << 3) // Baud-rate
 			  | (1 << 2) // Master Configuration
 			  | (1 << 8) // Software Slave Management
 			  | (1 << 9) // Internal Slave Select
-			  | (mode << 0) // Mode
+			  | (spi1.mode << 0) // Mode
 			  | (1 << 6); // Enable
 
 	if (!(RCC->APB2ENR & (1 << SPI1_BIT)))
@@ -76,34 +78,39 @@ static int spi1_init(SPI_Baudrate_Divisor br, uint8_t mode) {
 	if (!(SPI1->CR1 & (1 << 6)))
 		return -ENOTACT;
 
+	spi1.initialized = 1;
+
 	return ENONE;
 }
 
-int spi1_init_master_mode0(SPI_Baudrate_Divisor div) {
-	return spi1_init(div, 0);
-}
+static int spi_transmit(SPI spi) {
+	if (!spi.initialized)
+		return -ENOTRDY;
 
-int spi1_init_master_mode1(SPI_Baudrate_Divisor div) {
-	return spi1_init(div, 1);
-}
-
-int spi1_init_master_mode2(SPI_Baudrate_Divisor div) {
-	return spi1_init(div, 2);
-}
-
-int spi1_init_master_mode3(SPI_Baudrate_Divisor div) {
-	return spi1_init(div, 3);
-}
-
-int spi1_transmit(uint8_t *tx_buffer, uint8_t *rx_buffer, uint32_t len) {
 	cs_low();
 
-	for (uint32_t i = 0; i < len; i++)
-		transmit_byte(tx_buffer[i]);
+	for (uint32_t i = 0; i < spi.buffer_len; i++)
+		spi.rx_buffer[i] = transmit_byte(spi.tx_buffer[i], spi.reg_addr);
 
 	cs_high();
 
-	while (!(SPI1->SR & (1 << 1))); // Poll TXE
+	while (!(spi.reg_addr->SR & (1 << 1))); // Poll TXE
 
 	return ENONE;
 }
+
+static int spi1_transmit(void) {
+	return spi_transmit(spi1);
+}
+
+SPI spi1 = {
+	.reg_addr = SPI1,
+	.initialized = 0,
+	.br_div = div_8,
+	.buffer_len = 0,
+	.tx_buffer = 0,
+	.rx_buffer = 0,
+	.mode = 0,
+    .transmit = spi1_transmit,
+	.init = spi1_init,
+};

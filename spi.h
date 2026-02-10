@@ -74,6 +74,9 @@ typedef struct {
 #define PA7 14
 
 #define SPI1_BASE 0x40013000
+#define SPI2_BASE 0x40013000
+#define SPI3_BASE 0x40013000
+#define SPI4_BASE 0x40013000
 typedef struct {
 	volatile uint32_t CR1; // Offset 0x00
 	volatile uint32_t CR2; // Offset 0x04
@@ -86,6 +89,9 @@ typedef struct {
 	volatile uint32_t I2SPR; // Offset 0x20
 } SPI_TypeDef;
 #define SPI1 ((SPI_TypeDef *)SPI1_BASE)
+#define SPI2 ((SPI_TypeDef *)SPI2_BASE)
+#define SPI3 ((SPI_TypeDef *)SPI3_BASE)
+#define SPI4 ((SPI_TypeDef *)SPI4_BASE)
 
 /**
  * @brief Provides pre-defined values for selecting the SPI baud-rate divisor.
@@ -113,19 +119,28 @@ typedef enum {
 typedef enum {
 	ENONE,
 	ENOCLK,
-	ENOTACT
+	ENOTACT,
+	ENOTEQ,
+	ENOTRDY
 } SPI_Error_Code;
 
 /**
- * @brief Transmits the data in the given @p tx_buffer of length @p len, and stores the responses in @p rx_buffer.
- * @return 0 if successful, negative error code on failure.
+ * @brief The SPI object has a default baud-rate divisor of 8 (div_8) and a default of 0 (mode = 0).
+ * Firstly the object is initialized with init(), which will use @p br_div and @p mode to configure the SPI peripheral.
+ * Transmit data with transmit(), but first set the TX- and RX-buffers; don't forget to update @p buffer_len as well.
  * */
-int spi1_transmit(uint8_t *tx_buffer, uint8_t *rx_buffer, uint32_t len);
+typedef struct {
+	SPI_TypeDef *reg_addr;
+	uint8_t initialized;
+	SPI_Baudrate_Divisor br_div;
+	uint8_t mode;
+	uint32_t buffer_len;
+	uint8_t *tx_buffer;
+	uint8_t *rx_buffer;
+    int (*transmit)(void);
+    int (*init)(void);
+} SPI;
 
-int spi1_init_master_mode0(SPI_Baudrate_Divisor);
-int spi1_init_master_mode1(SPI_Baudrate_Divisor);
-int spi1_init_master_mode2(SPI_Baudrate_Divisor);
-int spi1_init_master_mode3(SPI_Baudrate_Divisor);
-
+extern SPI spi1;
 
 #endif /* SPI_H_ */
