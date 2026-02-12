@@ -27,7 +27,7 @@ static void cs_high(SPI spi) {
 static int spi_init(SPI *spi) {
 	// Configure NVIC
 	if (spi->interrupts) {
-		__asm__("CPSIE I");
+		__asm__("CPSIE I"); // Enable global interrupts
 
 		if (spi->peripheral_addr == spi1.peripheral_addr) {
 			NVIC_ISER_BASE[SPI1_NVIC_ISER] |= (1 << (SPI1_NVIC_ISER_OFFSET));
@@ -54,13 +54,20 @@ static int spi_init(SPI *spi) {
 	spi->peripheral_addr->CR2 = ((spi->ds-1) << 8) // DS[2:0] = 0111 (8-bit Data Size)
 			  | (1 << 12); // Set FIFO reception threshold to 8-bit (ensures an RXNE event after one byte is received)
 
-	/* Configure SPI1 */
-	spi->peripheral_addr->CR1 = (spi->br_div << 3) // Baud-rate
-			  | (1 << 2) // Master Configuration
-			  | (1 << 8) // Software Slave Management
-			  | (1 << 9) // Internal Slave Select
-			  | (spi->mode << 0) // Mode
-			  | (1 << 6); // Enable
+	if (spi->master) {
+		/* Configure SPI1 as Master */
+		spi->peripheral_addr->CR1 = (spi->br_div << 3) // Baud-rate
+				  | (1 << 2) // Master Configuration
+				  | (1 << 8) // Software Slave Management
+				  | (1 << 9) // Internal Slave Select
+				  | (spi->mode << 0) // Mode
+				  | (1 << 6); // Enable
+	} else {
+		/* Configure SPI1 as Slave */
+		spi->peripheral_addr->CR1 = (spi->mode << 0) // Mode
+				  | (1 << 6); // Enable
+	}
+
 
 	if (spi->peripheral_addr == spi1.peripheral_addr) {
 		if (!(RCC->APB2ENR & (1 << SPI1_BIT)))
@@ -89,7 +96,8 @@ static int spi1_init(void) {
 
 	/* Configure PA4 as CS */
 	GPIOA->MODER &= ~(3 << PA4); // Clear mode
-	GPIOA->MODER |= (1 << PA4); // Set output mode
+	if (spi1.master)
+		GPIOA->MODER |= (1 << PA4); // Set output mode
 
 	/* Configure PA5 as SCLK */
 	GPIOA->MODER &= ~(3 << PA5); // Clear mode
@@ -123,7 +131,8 @@ static int spi2_init(void) {
 
 	/* Configure PB12 as CS */
 	GPIOB->MODER &= ~(3 << PB12); // Clear mode
-	GPIOB->MODER |= (1 << PB12); // Set output mode
+	if (spi2.master)
+		GPIOB->MODER |= (1 << PB12); // Set output mode
 
 	/* Configure PB13 as SCLK */
 	GPIOB->MODER &= ~(3 << PB13); // Clear mode
@@ -187,6 +196,7 @@ static int spi2_transmit(void) {
 }
 
 SPI spi1 = {
+	.master = 1,
 	.peripheral_addr = SPI1,
 	.initialized = 0,
 	.interrupts = 0,
@@ -198,6 +208,7 @@ SPI spi1 = {
 };
 
 SPI spi2 = {
+	.master = 1,
 	.peripheral_addr = SPI2,
 	.initialized = 0,
 	.interrupts = 0,
@@ -211,24 +222,33 @@ SPI spi2 = {
 volatile uint32_t spi1_counter = 0;
 void SPI1_IRQHandler(void) {
 	if ((SPI1->SR & (1 << 0))) {
-		// Here with RXNE set, ready to store received data
-		spi1.rx_buffer[spi1_counter] = *(volatile uint8_t *)(&SPI1->DR);
+		if (spi1.master) { // Basic master implementation
+			// Here with RXNE set, ready to store received data
+			spi1.rx_buffer[spi1_counter] = *(volatile uint8_t *)(&SPI1->DR);
 
-		if (spi1_counter >= spi1.buffer_len)
-			SPI1->CR2 &= ~(1 << 6); // Disable RXNEIE
+			if (spi1_counter >= spi1.buffer_len)
+				SPI1->CR2 &= ~(1 << 6); // Disable RXNEIE
+		} else { // Dummy slave implementation
+			(void)(*(volatile uint8_t *)(&SPI1->DR));
+		}
 	}
 
 	if ((SPI1->SR & (1 << 1))) {
-		// Here with TXE set, ready to transmit data
+		if (spi1.master) { // Basic master implementation
+			// Here with TXE set, ready to transmit data
 
-		if (spi1_counter >= spi1.buffer_len) {
-			cs_high(spi1);
-			spi1_counter = 0;
-			SPI1->CR2 &= ~(1 << 7); // Disable TXEIE
-			return;
+			if (spi1_counter >= spi1.buffer_len) {
+				cs_high(spi1);
+				spi1_counter = 0;
+				SPI1->CR2 &= ~(1 << 7); // Disable TXEIE
+				return;
+			}
+
+			*(volatile uint8_t *)(&SPI1->DR) = spi1.tx_buffer[spi1_counter++];
+		} else { // Dummy slave implementation
+			*(volatile uint8_t *)(&SPI1->DR) = 0x0;
 		}
 
-		*(volatile uint8_t *)(&SPI1->DR) = spi1.tx_buffer[spi1_counter++];
 	}
 
 	return;
@@ -237,24 +257,32 @@ void SPI1_IRQHandler(void) {
 volatile uint32_t spi2_counter = 0;
 void SPI2_IRQHandler(void) {
 	if ((SPI2->SR & (1 << 0))) {
-		// Here with RXNE set, ready to store received data
-		spi2.rx_buffer[spi2_counter] = *(volatile uint8_t *)(&SPI2->DR);
+		if (spi2.master) { // Basic master implementation
+			// Here with RXNE set, ready to store received data
+			spi2.rx_buffer[spi2_counter] = *(volatile uint8_t *)(&SPI2->DR);
 
-		if (spi2_counter >= spi2.buffer_len)
-			SPI2->CR2 &= ~(1 << 6); // Disable RXNEIE
+			if (spi2_counter >= spi2.buffer_len)
+				SPI2->CR2 &= ~(1 << 6); // Disable RXNEIE
+		} else { // Dummy slave implementation
+			(void)(*(volatile uint8_t *)(&SPI2->DR));
+		}
 	}
 
 	if ((SPI2->SR & (1 << 1))) {
-		// Here with TXE set, ready to transmit data
+		if (spi2.master) { // Basic master implementation
+			// Here with TXE set, ready to transmit data
 
-		if (spi2_counter >= spi2.buffer_len) {
-			cs_high(spi2);
-			spi2_counter = 0;
-			SPI2->CR2 &= ~(1 << 7); // Disable TXEIE
-			return;
+			if (spi2_counter >= spi2.buffer_len) {
+				cs_high(spi2);
+				spi2_counter = 0;
+				SPI2->CR2 &= ~(1 << 7); // Disable TXEIE
+				return;
+			}
+
+			*(volatile uint8_t *)(&SPI2->DR) = spi2.tx_buffer[spi2_counter++];
+		} else { // Dummy slave implementation
+			*(volatile uint8_t *)(&SPI2->DR) = 0x0;
 		}
-
-		*(volatile uint8_t *)(&SPI2->DR) = spi2.tx_buffer[spi2_counter++];
 	}
 
 	return;
